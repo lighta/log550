@@ -1,0 +1,2 @@
+dmesg | grep tty
+make clean all && sudo dist/burn2.sh uCOS-II dist "-y"

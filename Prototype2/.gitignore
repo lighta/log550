@@ -1,0 +1,10 @@
+# bin folder
+dist/
+build/
+uCOS-II/Debug/
+uCOS-II/Release/
+nbproject/
+
+#ignore Doc as well
+Doc/
+
