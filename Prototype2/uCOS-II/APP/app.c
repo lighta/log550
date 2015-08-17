@@ -731,13 +731,12 @@ void Init_IO_Usager(void) {
 #endif	
 	
 
-	//INIT ADC
+	//ADC pins
 	static const gpio_map_t ADC_GPIO_MAP = {
 		{ADC_LIGHT_PIN, ADC_LIGHT_FUNCTION},
 		{ADC_POTENTIOMETER_PIN, ADC_POTENTIOMETER_FUNCTION}
 	};
-	
-	//init UART
+	//UART pins
 	static const gpio_map_t USART0_GPIO_MAP =
 	{
 		{AVR32_USART0_RXD_0_0_PIN, AVR32_USART0_RXD_0_0_FUNCTION},
@@ -748,11 +747,25 @@ void Init_IO_Usager(void) {
 		{AVR32_USART1_RXD_0_0_PIN, AVR32_USART1_RXD_0_0_FUNCTION},
 		{AVR32_USART1_TXD_0_0_PIN, AVR32_USART1_TXD_0_0_FUNCTION}
 	};
+	//ETH pins
+	static const gpio_map_t MACB_GPIO_MAP =
+	{
+		{EXTPHY_MACB_MDC_PIN,     EXTPHY_MACB_MDC_FUNCTION   },
+		{EXTPHY_MACB_MDIO_PIN,    EXTPHY_MACB_MDIO_FUNCTION  },
+		{EXTPHY_MACB_RXD_0_PIN,   EXTPHY_MACB_RXD_0_FUNCTION },
+		{EXTPHY_MACB_TXD_0_PIN,   EXTPHY_MACB_TXD_0_FUNCTION },
+		{EXTPHY_MACB_RXD_1_PIN,   EXTPHY_MACB_RXD_1_FUNCTION },
+		{EXTPHY_MACB_TXD_1_PIN,   EXTPHY_MACB_TXD_1_FUNCTION },
+		{EXTPHY_MACB_TX_EN_PIN,   EXTPHY_MACB_TX_EN_FUNCTION },
+		{EXTPHY_MACB_RX_ER_PIN,   EXTPHY_MACB_RX_ER_FUNCTION },
+		{EXTPHY_MACB_RX_DV_PIN,   EXTPHY_MACB_RX_DV_FUNCTION },
+		{EXTPHY_MACB_TX_CLK_PIN,  EXTPHY_MACB_TX_CLK_FUNCTION}
+	};
 
-    gpio_enable_module(ADC_GPIO_MAP, sizeof (ADC_GPIO_MAP) / sizeof (ADC_GPIO_MAP[0]));
-	
+	gpio_enable_module(ADC_GPIO_MAP, sizeof (ADC_GPIO_MAP) / sizeof (ADC_GPIO_MAP[0]));
 	gpio_enable_module(USART0_GPIO_MAP,sizeof(USART0_GPIO_MAP) / sizeof(USART0_GPIO_MAP[0]));
 	gpio_enable_module(USART1_GPIO_MAP,sizeof(USART1_GPIO_MAP) / sizeof(USART1_GPIO_MAP[0]));
+	gpio_enable_module(MACB_GPIO_MAP, sizeof(MACB_GPIO_MAP) / sizeof(MACB_GPIO_MAP[0]));
 
 #ifdef INTERUTP_MODE    
     AVR32_USART1.ier = AVR32_USART_IER_RXRDY_MASK;
@@ -778,6 +791,19 @@ void Init_IO_Usager(void) {
 	AVR32_GPIO.port[GPIO_PB0_PORT].iers = 1 << (GPIO_PB0_PIN & 0x1F); // Enable interrupt on GPIO88
 #endif
 
+#ifdef DEBUG_COM	
+	BSP_USART_printf(DEBUG_COM, "\rInitialising MACB...\n");
+#endif
+
+	// initialize MACB & Phy Layers
+	if (xMACBInit(&AVR32_MACB) == false )
+	{
+		#if ( (BOARD == EVK1100) || (BOARD==EVK1105) )
+		gpio_clr_gpio_pin(LED0_GPIO);
+		#endif
+		while(1);
+	}
+	
 #ifdef DEBUG_COM	
 	BSP_USART_printf(DEBUG_COM, "\rInit Done\n");
 #endif
