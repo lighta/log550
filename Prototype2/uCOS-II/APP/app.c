@@ -12,80 +12,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "cpu.h"
+#include "app_cfg.h"
+#include "app_inc.h"
 
-#define GPIO_SUCCESS					0 ///< (ASF) Function successfully completed.
-#define GPIO_INVALID_ARGUMENT		   1 ///< (ASF) Input parameters are out of range.
-#define DEBUG
-
-#ifdef DEBUG
-	#define SEMAPHORE_DEBUG
-	#define DEBUG_COM  0
-#endif
-
-#define INTERUTP_MODE
-
-
-
-#ifndef INTERUTP_MODE
-	#define ADC_QSIZE 10
-#endif
-
-#ifdef INTERUTP_MODE
-	#include "fifo.h"
-#endif
-
-
-
-/************************************************************************/
-/* Ports, we redefine port as uCOS-II one ain't suffisant                                       */
-/************************************************************************/
-
-/** A type definition of pins and modules connectivity. */
-typedef struct {
-    uint32_t pin; /**< Module pin. */
-    uint32_t function; /**< Module function. */
-} gpio_map_t[];
-#define AVR32_ADC_ADDRESS                  0xFFFF3C00	///< (ASF) Adresse ADC
-#define AVR32_ADC                          (*((volatile avr32_adc_t*)AVR32_ADC_ADDRESS))	///< (ASF) ADC
-/* Definitions of the potentiometer */
-#define ADC_POTENTIOMETER_CHANNEL   1				///< Canal potentiomètre
-#define ADC_POTENTIOMETER_PIN       AVR32_ADC_AD_1_PIN		///< Pin GPIO potentiomètre
-#define ADC_POTENTIOMETER_FUNCTION  AVR32_ADC_AD_1_FUNCTION	///< Fonction GPIO potentiomètre
-/* Definitions of the light sensor */
-#define ADC_LIGHT_CHANNEL           2				///< Canal lumière
-#define ADC_LIGHT_PIN               AVR32_ADC_AD_2_PIN		///< Pin GPIO lumière
-#define ADC_LIGHT_FUNCTION          AVR32_ADC_AD_2_FUNCTION	///< Fonction GPIO lumière
-// other shits..
-#define GPIO_PB0_PORT		2
-#define GPIO_PB0_PIN		24
-#define LED_MONO0_GREEN   0x01 //LED0
-#define LED_MONO1_GREEN   0x02 //LED1
-#define LED_MONO2_GREEN   0x04 //LED2
-#define LED_MONO3_GREEN   0x08 //LED3
-#define LED_BI0_GREEN     0x20 //LED4
-#define LED_BI0_RED       0x10 //LED5
-#define LED_BI1_GREEN     0x80 //LED6
-#define LED_BI1_RED       0x40 //LED7
-
-// @TODO move me into APP_config.h
-#define DATA_COM   1
-
-//delay de depart de toute les task pour laisser le tmps a idle de calculer son max incrementation par tick
-#define TASK_INIT_DLY ( OS_TICKS_PER_SEC*4)
-//nombre de tick necessaire pour calcul du nb_max_incr/tick, (must be < TASK_INIT_DLY)
-#define OFFSET_DLY TASK_INIT_DLY/2
-
-/** Caractere pour debuter le programe */
-#define CH_START 's'
-/** Caractere pour arreter le programe */
-#define CH_STOP 'x'
-/**** Reservation du STACK de chaque tache ************************************************/
-#define OS_TASK_STK_SIZE 256
-#define MAX_TASK 8
-
-#define STATS_NB_TICK 10 // nombres de tick utilise pour le pourcentage
-
-
+//Stack for each thread (stack size doesn't have to be equal
+// but seem to be >= 128 from test)
 OS_STK Task1_Stk[OS_TASK_STK_SIZE];
 OS_STK Task2_Stk[OS_TASK_STK_SIZE];
 OS_STK Task3_Stk[OS_TASK_STK_SIZE];
@@ -198,7 +129,7 @@ static void IRQ_PB0(void) {
 static void IRQ_UART_DATA(void)
 {
 	 CPU_INT08U char_recu;
-         CPU_SR cpu_sr;
+	 CPU_SR cpu_sr;
 	 
 	OSIntEnter();
 #ifdef DEBUG_COM		
@@ -211,10 +142,8 @@ static void IRQ_UART_DATA(void)
 		//Eliminer la source de l'IRQ, bit RXRDY (automatiquement mis a zero a la lecture de RHR)
 		//(les seul char qui nous interesse sont CH_STOP et CH_START, ont peut donc masquer et eliminer les autres)
 		switch (char_recu) {
-			case CH_START: 
-				//OS_ENTER_CRITICAL(); //why ?? 2015/04/11 (max)
-					OSSemPost(Sema_ACDstart);
-				//OS_EXIT_CRITICAL();
+			case CH_START:
+				OSSemPost(Sema_ACDstart);
 				break; //start : demarrer aquisation a partir de MAINTENANT tu commence a prendre les data
 			case CH_STOP: 
 				OS_ENTER_CRITICAL();
@@ -798,17 +727,16 @@ void Init_IO_Usager(void) {
 	
 #ifdef DEBUG_COM	
 	BSP_USART_Init(DEBUG_COM, 57600); //Initialise USART2 at 57600bauds, voir BSP.c
-	BSP_USART_printf(DEBUG_COM, "\r\nPrototype 2 (DEBUG test)\n");
+	BSP_USART_printf(DEBUG_COM, "\r\nPrototype 2 (NEW DEBUG test)\n");
 #endif	
 	
 
-	//INIT ADC
+	//ADC pins
 	static const gpio_map_t ADC_GPIO_MAP = {
 		{ADC_LIGHT_PIN, ADC_LIGHT_FUNCTION},
 		{ADC_POTENTIOMETER_PIN, ADC_POTENTIOMETER_FUNCTION}
 	};
-	
-	//init UART
+	//UART pins
 	static const gpio_map_t USART0_GPIO_MAP =
 	{
 		{AVR32_USART0_RXD_0_0_PIN, AVR32_USART0_RXD_0_0_FUNCTION},
@@ -819,11 +747,25 @@ void Init_IO_Usager(void) {
 		{AVR32_USART1_RXD_0_0_PIN, AVR32_USART1_RXD_0_0_FUNCTION},
 		{AVR32_USART1_TXD_0_0_PIN, AVR32_USART1_TXD_0_0_FUNCTION}
 	};
+	//ETH pins
+	static const gpio_map_t MACB_GPIO_MAP =
+	{
+		{EXTPHY_MACB_MDC_PIN,     EXTPHY_MACB_MDC_FUNCTION   },
+		{EXTPHY_MACB_MDIO_PIN,    EXTPHY_MACB_MDIO_FUNCTION  },
+		{EXTPHY_MACB_RXD_0_PIN,   EXTPHY_MACB_RXD_0_FUNCTION },
+		{EXTPHY_MACB_TXD_0_PIN,   EXTPHY_MACB_TXD_0_FUNCTION },
+		{EXTPHY_MACB_RXD_1_PIN,   EXTPHY_MACB_RXD_1_FUNCTION },
+		{EXTPHY_MACB_TXD_1_PIN,   EXTPHY_MACB_TXD_1_FUNCTION },
+		{EXTPHY_MACB_TX_EN_PIN,   EXTPHY_MACB_TX_EN_FUNCTION },
+		{EXTPHY_MACB_RX_ER_PIN,   EXTPHY_MACB_RX_ER_FUNCTION },
+		{EXTPHY_MACB_RX_DV_PIN,   EXTPHY_MACB_RX_DV_FUNCTION },
+		{EXTPHY_MACB_TX_CLK_PIN,  EXTPHY_MACB_TX_CLK_FUNCTION}
+	};
 
-    gpio_enable_module(ADC_GPIO_MAP, sizeof (ADC_GPIO_MAP) / sizeof (ADC_GPIO_MAP[0]));
-	
+	gpio_enable_module(ADC_GPIO_MAP, sizeof (ADC_GPIO_MAP) / sizeof (ADC_GPIO_MAP[0]));
 	gpio_enable_module(USART0_GPIO_MAP,sizeof(USART0_GPIO_MAP) / sizeof(USART0_GPIO_MAP[0]));
 	gpio_enable_module(USART1_GPIO_MAP,sizeof(USART1_GPIO_MAP) / sizeof(USART1_GPIO_MAP[0]));
+	gpio_enable_module(MACB_GPIO_MAP, sizeof(MACB_GPIO_MAP) / sizeof(MACB_GPIO_MAP[0]));
 
 #ifdef INTERUTP_MODE    
     AVR32_USART1.ier = AVR32_USART_IER_RXRDY_MASK;
@@ -850,14 +792,24 @@ void Init_IO_Usager(void) {
 #endif
 
 #ifdef DEBUG_COM	
+	BSP_USART_printf(DEBUG_COM, "\rInitialising MACB...\n");
+#endif
+
+	// initialize MACB & Phy Layers
+	if (xMACBInit(&AVR32_MACB) == false )
+	{
+		#if ( (BOARD == EVK1100) || (BOARD==EVK1105) )
+		gpio_clr_gpio_pin(LED0_GPIO);
+		#endif
+		while(1);
+	}
+	
+#ifdef DEBUG_COM	
 	BSP_USART_printf(DEBUG_COM, "\rInit Done\n");
 #endif
 }
 
 
-/************************************************************************/
-/* ATMEL SOFTWARE FRAMEWORK(ASF) IMPLEMENTATIONS						*/
-/************************************************************************/
 
 /**
  * Initialisation de l'ADC
@@ -895,6 +847,12 @@ void init_adc(volatile avr32_adc_t *adc) {
 #endif
 }
 
+
+/************************************************************************/
+/* ATMEL SOFTWARE FRAMEWORK(ASF) IMPLEMENTATIONS						*/
+/************************************************************************/
+
+
 /************************************************************************/
 /* Fonctions importer													*/
 /* move into other file ?                                               */
@@ -902,12 +860,6 @@ void init_adc(volatile avr32_adc_t *adc) {
 void adc_start(volatile avr32_adc_t *adc) {
 	/* start conversion */
 	adc->cr = AVR32_ADC_START_MASK;
-}
-
-/// @brief Fonction ASF.
-void adc_enable(volatile avr32_adc_t *adc, uint16_t channel) {
-	/* enable channel */
-	adc->cher = (1 << channel);
 }
 
 /// @brief Fonction ASF.
@@ -998,51 +950,8 @@ uint32_t gpio_enable_module(const gpio_map_t gpiomap, uint32_t size) {
 }
 
 
-// @TODO move into own file ?
-/// @brief Fonction ASF.
-
-//! Structure describing LED hardware connections.
-#define LED_COUNT 8
 //! Saved state of all LEDs.
 static volatile CPU_INT32U LED_State = (1 << LED_COUNT) - 1;
-
-typedef const struct {
-
-	struct {
-		CPU_INT32U PORT;	 //!< LED GPIO port.
-		CPU_INT32U PIN_MASK; //!< Bit-mask of LED pin in GPIO port.
-	} GPIO; //!< LED GPIO descriptor.
-
-	struct {
-		CPU_INT32S CHANNEL;  //!< LED PWM channel (< 0 if N/A).
-		CPU_INT32S FUNCTION; //!< LED pin PWM function (< 0 if N/A).
-	} PWM; //!< LED PWM descriptor.
-} tLED_DESCRIPTOR;
-//! Hardware descriptors of all LEDs.
-#define LED0_GPIO   AVR32_PIN_PB27
-#define LED1_GPIO   AVR32_PIN_PB28
-#define LED2_GPIO   AVR32_PIN_PB29
-#define LED3_GPIO   AVR32_PIN_PB30
-#define LED4_GPIO   AVR32_PIN_PB19
-#define LED5_GPIO   AVR32_PIN_PB20
-#define LED6_GPIO   AVR32_PIN_PB21
-#define LED7_GPIO   AVR32_PIN_PB22
-#define LED0_PWM	(-1)
-#define LED1_PWM	(-1)
-#define LED2_PWM	(-1)
-#define LED3_PWM	(-1)
-#define LED4_PWM	  0
-#define LED5_PWM	  1
-#define LED6_PWM	  2
-#define LED7_PWM	  3
-#define LED0_PWM_FUNCTION   (-1)
-#define LED1_PWM_FUNCTION   (-1)
-#define LED2_PWM_FUNCTION   (-1)
-#define LED3_PWM_FUNCTION   (-1)
-#define LED4_PWM_FUNCTION   AVR32_PWM_0_FUNCTION
-#define LED5_PWM_FUNCTION   AVR32_PWM_1_FUNCTION
-#define LED6_PWM_FUNCTION   AVR32_PWM_2_FUNCTION
-#define LED7_PWM_FUNCTION   AVR32_PWM_3_FUNCTION
 static tLED_DESCRIPTOR LED_DESCRIPTOR[LED_COUNT] = {
 #define INSERT_LED_DESCRIPTOR(LED_NO)                 \
 	{                                                           \
